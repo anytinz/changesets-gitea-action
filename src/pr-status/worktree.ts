@@ -5,10 +5,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { isRepoShallow } from '@changesets/git'
 import { exec } from 'tinyexec'
-import { moveDisposable } from '@/utils'
 import type { Result } from 'tinyexec'
 import type { PullRequestContext } from '@/pr-context'
-import type { WithAsyncDispose } from '@/utils'
 
 type WorktreeInfo = {
   baseRef: string
@@ -86,18 +84,7 @@ const ensureMergeBase = async (args: {
   return ensureMergeBase({ cwd, refs, deepenBy })
 }
 
-const mkdtempDir = async (prefix: string): Promise<WithAsyncDispose<{ dir: string }>> => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), prefix))
-
-  return {
-    dir,
-    async [Symbol.asyncDispose](): Promise<void> {
-      await rm(dir, { recursive: true, force: true })
-    },
-  }
-}
-
-const tempRef = async (cwd: string, ref: Ref): Promise<WithAsyncDispose<Record<string, never>>> => {
+const fetchRef = async (cwd: string, ref: Ref): Promise<void> => {
   await git(cwd, [
     'fetch',
     '--no-tags',
@@ -105,51 +92,56 @@ const tempRef = async (cwd: string, ref: Ref): Promise<WithAsyncDispose<Record<s
     ref.fetchSource,
     `${ref.remote}:${ref.local}`,
   ])
-  return {
-    async [Symbol.asyncDispose](): Promise<void> {
-      await git(cwd, ['update-ref', '-d', ref.local], { throwOnError: false })
-    },
-  }
 }
 
-const tempWorktree = async (
-  cwd: string,
-  dir: string,
-  ref: Ref,
-): Promise<WithAsyncDispose<Record<string, never>>> => {
+const removeRef = async (cwd: string, ref: Ref): Promise<void> => {
+  await git(cwd, ['update-ref', '-d', ref.local], { throwOnError: false })
+}
+
+const addWorktree = async (cwd: string, dir: string, ref: Ref): Promise<void> => {
   await git(cwd, ['worktree', 'add', '--detach', dir, ref.local])
-
-  return {
-    async [Symbol.asyncDispose](): Promise<void> {
-      await git(cwd, ['worktree', 'remove', '--force', dir], {
-        throwOnError: false,
-      })
-    },
-  }
 }
 
-export const getPullRequestWorktree = async (
+const removeWorktree = async (cwd: string, dir: string): Promise<void> => {
+  await git(cwd, ['worktree', 'remove', '--force', dir], {
+    throwOnError: false,
+  })
+}
+
+export const withPullRequestWorktree = async <T>(
   context: PullRequestContext,
+  fn: (worktree: WorktreeInfo) => Promise<T>,
   cwd: string = process.cwd(),
-): Promise<WithAsyncDispose<WorktreeInfo>> => {
-  await using stack = new AsyncDisposableStack()
-  const worktreeDir = stack.use(
-    await mkdtempDir('changesets-action-pr-status-'),
-  ).dir
-
+): Promise<T> => {
+  const worktreeDir = await mkdtemp(path.join(os.tmpdir(), 'changesets-action-pr-status-'))
   const refs = getRefs(context)
+  const cleanup: (() => Promise<void>)[] = []
 
-  stack.use(await tempRef(cwd, refs.base))
-  stack.use(await tempRef(cwd, refs.head))
-  stack.use(await tempWorktree(cwd, worktreeDir, refs.head))
+  try {
+    cleanup.push(async () => rm(worktreeDir, { recursive: true, force: true }))
+    await fetchRef(cwd, refs.base)
+    cleanup.push(async () => removeRef(cwd, refs.base))
+    await fetchRef(cwd, refs.head)
+    cleanup.push(async () => removeRef(cwd, refs.head))
+    await addWorktree(cwd, worktreeDir, refs.head)
+    cleanup.push(async () => removeWorktree(cwd, worktreeDir))
 
-  await ensureMergeBase({
-    cwd: worktreeDir,
-    refs,
-  })
+    await ensureMergeBase({
+      cwd: worktreeDir,
+      refs,
+    })
 
-  return moveDisposable(stack, {
-    baseRef: refs.base.local,
-    cwd: worktreeDir,
-  })
+    return await fn({
+      baseRef: refs.base.local,
+      cwd: worktreeDir,
+    })
+  } finally {
+    await cleanup.toReversed().reduce(
+      async (previous, dispose) => {
+        await previous
+        await dispose()
+      },
+      Promise.resolve(),
+    )
+  }
 }

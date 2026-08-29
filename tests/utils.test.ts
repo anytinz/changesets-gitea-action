@@ -6,6 +6,7 @@ import {
   sortTheThings,
   validateChangesetsCliVersion,
 } from '@/utils'
+import { withTestScope } from './test-utils.js'
 
 const changelog = `# @keystone-alpha/email
 
@@ -111,45 +112,60 @@ test('it sorts the things right', () => {
 })
 
 test('throws when the project declares Changesets CLI v2', async () => {
-  await using fixture = await createFixture({
-    'package.json': JSON.stringify({
-      name: 'project',
-      devDependencies: { '@changesets/cli': '^2.29.7' },
-    }),
-    'package-lock.json': '',
-  })
+  await withTestScope(async (add) => {
+    const fixture = add(
+      await createFixture({
+        'package.json': JSON.stringify({
+          name: 'project',
+          devDependencies: { '@changesets/cli': '^2.29.7' },
+        }),
+        'package-lock.json': '',
+      }),
+      async (f) => f.rm(),
+    )
 
-  await expect(validateChangesetsCliVersion(fixture.path)).rejects.toThrow(
-    'This version of the Changesets action is designed to work with Changesets CLI v3. Changesets CLI v2 is not supported; use Changesets action v1 instead, which is compatible with CLI v2.',
-  )
+    await expect(validateChangesetsCliVersion(fixture.path)).rejects.toThrow(
+      'This version of the Changesets action is designed to work with Changesets CLI v3. Changesets CLI v2 is not supported; use Changesets action v1 instead, which is compatible with CLI v2.',
+    )
+  })
 })
 test('accepts a Changesets CLI v3 contract without an installed CLI', async () => {
-  await using fixture = await createFixture({
-    'package.json': JSON.stringify({
-      name: 'project',
-      devDependencies: { '@changesets/cli': '^3.0.0' },
-    }),
-    'package-lock.json': '',
-  })
+  await withTestScope(async (add) => {
+    const fixture = add(
+      await createFixture({
+        'package.json': JSON.stringify({
+          name: 'project',
+          devDependencies: { '@changesets/cli': '^3.0.0' },
+        }),
+        'package-lock.json': '',
+      }),
+      async (f) => f.rm(),
+    )
 
-  await expect(
-    validateChangesetsCliVersion(fixture.path),
-  ).resolves.toBeUndefined()
+    await expect(
+      validateChangesetsCliVersion(fixture.path),
+    ).resolves.toBeUndefined()
+  })
 })
 test('throws when the project has Changesets CLI v2 installed', async () => {
-  await using fixture = await createFixture({
-    'package.json': JSON.stringify({
-      name: 'project',
-      devDependencies: { '@changesets/cli': '^3.0.0' },
-    }),
-    'package-lock.json': '',
-    'node_modules/@changesets/cli/package.json': JSON.stringify({
-      name: '@changesets/cli',
-      version: '2.29.7',
-    }),
-  })
+  await withTestScope(async (add) => {
+    const fixture = add(
+      await createFixture({
+        'package.json': JSON.stringify({
+          name: 'project',
+          devDependencies: { '@changesets/cli': '^3.0.0' },
+        }),
+        'package-lock.json': '',
+        'node_modules/@changesets/cli/package.json': JSON.stringify({
+          name: '@changesets/cli',
+          version: '2.29.7',
+        }),
+      }),
+      async (f) => f.rm(),
+    )
 
-  await expect(validateChangesetsCliVersion(fixture.path)).rejects.toThrow(
-    'This version of the Changesets action is designed to work with Changesets CLI v3. Changesets CLI v2 is not supported; use Changesets action v1 instead, which is compatible with CLI v2.',
-  )
+    await expect(validateChangesetsCliVersion(fixture.path)).rejects.toThrow(
+      'This version of the Changesets action is designed to work with Changesets CLI v3. Changesets CLI v2 is not supported; use Changesets action v1 instead, which is compatible with CLI v2.',
+    )
+  })
 })
