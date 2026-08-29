@@ -1,7 +1,3 @@
-savePrefix: ""
-
-publicHoistPattern:
-  - '@typescript/*'
-
 allowBuilds:
+  core-js: true
   unrs-resolver: true
