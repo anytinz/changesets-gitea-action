@@ -48,6 +48,7 @@ if (specBuffer === null) {
   await writeFile(cacheFile, specBuffer)
 }
 
+/** @type {any} */
 const schema = JSON.parse(specBuffer.toString('utf8'))
 const ast = await openapiTS(schema)
 const output = astToString(ast)

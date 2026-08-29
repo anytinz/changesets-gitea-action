@@ -128,22 +128,6 @@ export const isErrorWithCode = (err: unknown, code: string): boolean => typeof e
   && 'code' in err
   && err.code === code
 
-export type WithAsyncDispose<T> = T & {
-  [Symbol.asyncDispose]: () => Promise<void>
-}
-
-export const moveDisposable = <T extends object>(
-  stack: AsyncDisposableStack,
-  value: T,
-): WithAsyncDispose<T> => {
-  const moved = stack.move()
-  return Object.assign(value, {
-    async [Symbol.asyncDispose](): Promise<void> {
-      await moved.disposeAsync()
-    },
-  })
-}
-
 export const getProcessEnv = (): Record<string, string> => {
   const env: Record<string, string> = {}
   Object.entries(process.env).forEach(([key, value]) => {

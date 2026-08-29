@@ -1,7 +1,7 @@
 import { getReleasePlan } from '@changesets/get-release-plan'
 import { markdownTable } from 'markdown-table'
 import { getNewChangesetTemplateContent, getNewChangesetUrl } from '@/pr-status/template'
-import { getPullRequestWorktree } from '@/pr-status/worktree'
+import { withPullRequestWorktree } from '@/pr-status/worktree'
 import type { ComprehensiveRelease, ReleasePlan, VersionType } from '@changesets/types'
 import type { PullRequestContext } from '@/pr-context'
 
@@ -80,23 +80,23 @@ ${getReleasePlanMessage(releasePlan)}
 [Click here if you're a maintainer who wants to add a changeset to this PR](${newChangesetUrl})`
 
 export const getCommentMessage = async (context: PullRequestContext): Promise<string> => {
-  await using worktree = await getPullRequestWorktree(context)
+  return withPullRequestWorktree(context, async (worktree) => {
+    const releasePlan = await getReleasePlan(worktree.cwd, worktree.baseRef)
+    const templateContent = await getNewChangesetTemplateContent(
+      worktree.cwd,
+      worktree.baseRef,
+      context.title,
+    )
 
-  const releasePlan = await getReleasePlan(worktree.cwd, worktree.baseRef)
-  const templateContent = await getNewChangesetTemplateContent(
-    worktree.cwd,
-    worktree.baseRef,
-    context.title,
-  )
+    const newChangesetUrl = getNewChangesetUrl(
+      context.head.repo.html_url,
+      context.head.ref,
+      templateContent,
+    )
 
-  const newChangesetUrl = getNewChangesetUrl(
-    context.head.repo.html_url,
-    context.head.ref,
-    templateContent,
-  )
-
-  if (releasePlan.changesets.length > 0) {
-    return getApproveMessage(context.head.sha, newChangesetUrl, releasePlan)
-  }
-  return getAbsentMessage(context.head.sha, newChangesetUrl, releasePlan)
+    if (releasePlan.changesets.length > 0) {
+      return getApproveMessage(context.head.sha, newChangesetUrl, releasePlan)
+    }
+    return getAbsentMessage(context.head.sha, newChangesetUrl, releasePlan)
+  })
 }

@@ -7,14 +7,35 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { exec } from 'tinyexec'
-import { moveDisposable } from '@/utils'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { FileTree, FsFixture } from 'fs-fixture'
-import type { WithAsyncDispose } from '@/utils'
 
 export type Fixture = FileTree
 
 export const testdir = async (dir?: Fixture): ReturnType<typeof createFixture> => createFixture(dir)
+
+export const withTestScope = async <T>(
+  fn: (add: <V>(value: V, dispose: (value: V) => unknown) => V) => Promise<T>,
+): Promise<T> => {
+  const disposers: (() => Promise<void>)[] = []
+  const add = <V>(value: V, dispose: (value: V) => unknown): V => {
+    disposers.push(async () => {
+      await dispose(value)
+    })
+    return value
+  }
+  try {
+    return await fn(add)
+  } finally {
+    await disposers.toReversed().reduce(
+      async (previous, dispose) => {
+        await previous
+        await dispose()
+      },
+      Promise.resolve(),
+    )
+  }
+}
 
 // Git maintenance can race with fixture cleanup by touching pack files.
 export const disableGitBackgroundMaintenance = async (cwd: string): Promise<void> => {
@@ -28,16 +49,11 @@ export const disableGitBackgroundMaintenance = async (cwd: string): Promise<void
   })
 }
 
-export const gitdir = async (
-  dir: Fixture,
-): Promise<WithAsyncDispose<FsFixture>> => {
-  await using stack = new AsyncDisposableStack()
-  const fixture = stack.use(
-    await testdir({
-      '.gitattributes': '* text=auto eol=lf\n',
-      ...dir,
-    }),
-  )
+export const gitdir = async (dir: Fixture): Promise<FsFixture> => {
+  const fixture = await testdir({
+    '.gitattributes': '* text=auto eol=lf\n',
+    ...dir,
+  })
   const cwd = fixture.path
 
   await exec('git', ['init'], {
@@ -77,15 +93,14 @@ export const gitdir = async (
     throwOnError: true,
   })
 
-  return moveDisposable(stack, fixture)
+  return fixture
 }
 
 export const shallowClone = async (
   cwd: string,
   depth = 1,
-): Promise<WithAsyncDispose<FsFixture>> => {
-  await using stack = new AsyncDisposableStack()
-  const fixture = stack.use(await testdir())
+): Promise<FsFixture> => {
+  const fixture = await testdir()
   await exec(
     'git',
     ['clone', '--depth', depth.toString(), pathToFileURL(cwd).toString(), '.'],
@@ -95,7 +110,7 @@ export const shallowClone = async (
     },
   )
   await disableGitBackgroundMaintenance(fixture.path)
-  return moveDisposable(stack, fixture)
+  return fixture
 }
 
 const runGitHttpBackend = async (
@@ -213,7 +228,7 @@ const recordRequest = (request: IncomingMessage): RecordedRequest => ({
 
 const createGitHttpServer = async (
   cwd: string,
-): Promise<WithAsyncDispose<{ origin: string; requests: RecordedRequest[] }>> => {
+): Promise<{ origin: string; requests: RecordedRequest[]; close: () => Promise<void> }> => {
   const requests: RecordedRequest[] = []
   const server = http.createServer((request, response) => {
     requests.push(recordRequest(request))
@@ -237,7 +252,7 @@ const createGitHttpServer = async (
   return {
     origin: `http://127.0.0.1:${address.port}`,
     requests,
-    async [Symbol.asyncDispose](): Promise<void> {
+    close: async (): Promise<void> => {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error !== undefined) {
@@ -251,49 +266,52 @@ const createGitHttpServer = async (
   }
 }
 
-const createLocalRemote = async (
-  dir: Fixture,
-): Promise<WithAsyncDispose<FsFixture>> => {
-  await using stack = new AsyncDisposableStack()
-  const fixture = stack.use(await testdir())
+const createLocalRemote = async (dir: Fixture): Promise<FsFixture> => {
+  const fixture = await testdir()
   const remote = fixture.path
   {
     // Use a working repository to create the bare remote's initial history.
     // Once cloned, the remote owns that history and the source can be disposed.
-    await using sourceFixture = await gitdir(dir)
-    await exec(
-      'git',
-      ['clone', '--bare', pathToFileURL(sourceFixture.path).toString(), '.'],
-      {
-        nodeOptions: { cwd: remote },
-        throwOnError: true,
-      },
-    )
+    const sourceFixture = await gitdir(dir)
+    try {
+      await exec(
+        'git',
+        ['clone', '--bare', pathToFileURL(sourceFixture.path).toString(), '.'],
+        {
+          nodeOptions: { cwd: remote },
+          throwOnError: true,
+        },
+      )
+    } finally {
+      await sourceFixture.rm()
+    }
   }
   await disableGitBackgroundMaintenance(remote)
   await exec('git', ['config', 'http.receivepack', 'true'], {
     nodeOptions: { cwd: remote },
     throwOnError: true,
   })
-  return moveDisposable(stack, fixture)
+  return fixture
 }
 
-type GitHttpRemote = WithAsyncDispose<{
+type GitHttpRemote = {
   path: string
   url: string
   requests: RecordedRequest[]
-}>
+  close: () => Promise<void>
+}
 
 export const createGitHttpRemote = async (files: Fixture): Promise<GitHttpRemote> => {
-  await using stack = new AsyncDisposableStack()
-  const fixture = stack.use(await createLocalRemote(files))
-  const server = stack.use(
-    await createGitHttpServer(path.dirname(fixture.path)),
-  )
+  const fixture = await createLocalRemote(files)
+  const server = await createGitHttpServer(path.dirname(fixture.path))
 
-  return moveDisposable(stack, {
+  return {
     path: fixture.path,
     url: `${server.origin}/${path.basename(fixture.path)}`,
     requests: server.requests,
-  })
+    close: async (): Promise<void> => {
+      await server.close()
+      await fixture.rm()
+    },
+  }
 }

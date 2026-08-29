@@ -45,7 +45,7 @@ const readPublishPlan = async (publishPlanPath: string): Promise<PublishPlan> =>
       `Invalid publish plan at ${publishPlanPath}: expected { version: number; plan: unknown[] }`,
     )
   }
-  return plan.plan as unknown[]
+  return plan.plan
 }
 
 const getMode = async (cwd: string): Promise<ModeResult> => {
