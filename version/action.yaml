@@ -1,0 +1,41 @@
+name: Changesets - Version
+description: Version packages
+runs:
+  using: node24
+  main: ../dist/version.js
+inputs:
+  gitea-token:
+    description: >
+      The Gitea token to use for authentication. Defaults to the token provided by Gitea Actions.
+      To use a custom token, pass it explicitly to this input.
+    required: false
+    default: ${{ gitea.token }}
+  script:
+    description: "The command to use to version packages"
+    required: false
+  commit-message:
+    description: "The commit message. Default to `Version Packages`"
+    required: false
+    default: "Version Packages"
+  pr-title:
+    description: "The pull request title. Default to `Version Packages`"
+    required: false
+    default: "Version Packages"
+  pr-draft:
+    description: >
+      Controls draft PR behavior. Use 'create' to create new version PRs as draft, or 'always' to
+      also convert existing version PRs back to draft when updating them. Drafts are implemented
+      by prefixing the PR title with `WIP: `.
+    required: false
+  pr-base-branch:
+    description: "Sets the base branch of the PR. Defaults to `gitea.ref_name`."
+    required: false
+  cwd:
+    description: "The working directory to execute Changesets in. Defaults to the root of the repository."
+    required: false
+outputs:
+  pr-number:
+    description: The pull request number that was created or updated
+branding:
+  icon: package
+  color: blue

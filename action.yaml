@@ -1,0 +1,61 @@
+name: Changesets
+description: An action to automate releases with Changesets for Gitea repositories
+runs:
+  using: node24
+  main: dist/index.js
+inputs:
+  gitea-token:
+    description: >
+      The Gitea token to use for authentication. Defaults to the token provided by Gitea Actions.
+      To use a custom token, pass it explicitly to this input.
+    required: false
+    default: ${{ gitea.token }}
+  publish-script:
+    description: "The command to use to build and publish packages"
+    required: false
+  version-script:
+    description: "The command to update version, edit CHANGELOG, read and delete changesets. Default to `changeset version` if not provided"
+    required: false
+  commit-message:
+    description: "The commit message. Default to `Version Packages`"
+    required: false
+    default: "Version Packages"
+  pr-title:
+    description: "The pull request title. Default to `Version Packages`"
+    required: false
+    default: "Version Packages"
+  pr-draft:
+    description: >
+      Controls draft PR behavior. Use 'create' to create new version PRs as draft, or 'always' to
+      also convert existing version PRs back to draft when updating them. Drafts are implemented
+      by prefixing the PR title with `WIP: `.
+    required: false
+  pr-base-branch:
+    description: "Sets the base branch of the PR. Defaults to `gitea.ref_name`."
+    required: false
+  create-gitea-releases:
+    description: "Whether to create Gitea releases after publish"
+    required: false
+    default: true
+  push-git-tags:
+    description: >
+      Whether to create git tags after publish. If `create-gitea-releases` is set to `true`,
+      this option will also always be `true`.
+    required: false
+    default: true
+  cwd:
+    description: "The working directory to execute Changesets in. Defaults to the root of the repository."
+    required: false
+outputs:
+  published:
+    description: A "true" or "false" string value to indicate whether a publishing is happened or not
+  published-packages:
+    description: >
+      A JSON array to present the published packages. The format is `[{"name": "@xx/xx", "version": "1.2.0"}, {"name": "@xx/xy", "version": "0.8.9"}]`
+  has-changesets:
+    description: A "true" or "false" string value about whether there were changesets. Useful if you want to create your own publishing functionality.
+  pr-number:
+    description: The pull request number that was created or updated
+branding:
+  icon: package
+  color: blue
