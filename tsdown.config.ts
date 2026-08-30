@@ -13,5 +13,10 @@ const config = defineConfig({
   format: ['esm'],
   outExtensions: () => ({ js: '.js' }),
   clean: true,
+  sourcemap: 'inline',
+  minify: true,
+  outputOptions: {
+    chunkFileNames: 'chunks/[name]-[hash].js',
+  },
 })
 export default config
