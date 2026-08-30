@@ -1,5 +1,11 @@
 # changesets-gitea-action
 
+## 0.2.2
+
+### Patch Changes
+
+- [#17](https://github.com/anytinz/changesets-gitea-action/pull/17) [`373b370`](https://github.com/anytinz/changesets-gitea-action/commit/373b370c81d36b84e1a0e7513a9429bc98a2de3c) Thanks [@anytinz](https://github.com/anytinz)! - build: bundle all deps
+
 ## 0.2.1
 
 ### Patch Changes
