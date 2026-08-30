@@ -16,8 +16,15 @@ export const getGiteaServerUrl = (): string => {
       'Please set the GITHUB_SERVER_URL environment variable, e.g. https://gitea.example.com',
     )
   }
-  return serverUrl
+  return serverUrl.replace(/\/+$/u, '')
 }
+
+/**
+ * The base URL of the Gitea REST API. The generated client path templates
+ * (e.g. `/repos/{owner}/{repo}/pulls`) are relative to the API root, so the
+ * `/api/v1` prefix must be added to the instance URL.
+ */
+export const getGiteaApiUrl = (): string => `${getGiteaServerUrl()}/api/v1`
 
 export const isNotFound = (error: unknown): boolean => typeof error === 'object'
   && error !== null
@@ -138,7 +145,7 @@ const fetchWithRateLimitRetry = async (input: Request): Promise<Response> => {
 }
 
 export const setupGitea = (giteaToken: string): Client<paths> => createClient<paths>({
-  baseUrl: getGiteaServerUrl(),
+  baseUrl: getGiteaApiUrl(),
   headers: {
     Authorization: `token ${giteaToken}`,
   },
