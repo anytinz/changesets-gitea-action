@@ -7,7 +7,7 @@ import { info, warning } from '@actions/core'
 import { exec, getExecOutput } from '@actions/exec'
 import { context } from '@actions/github'
 import { getPackages } from '@manypkg/get-packages'
-import { getData, isNotFound } from '@/gitea'
+import { getData } from '@/gitea'
 import { readChangesetState } from '@/read-changeset-state'
 import {
   execChangesetsCli,
@@ -340,29 +340,48 @@ const isDraftTitle = (title: string): boolean => {
   return DRAFT_TITLE_PREFIXES.some((prefix) => lowerTitle.startsWith(prefix))
 }
 
+// The `/pulls/{base}/{head}` endpoint matches pull requests in any state and
+// does not guarantee which one is returned when several match, so list the
+// open pull requests and filter them locally instead.
+const PR_SEARCH_PAGE_SIZE = 50
+const PR_SEARCH_MAX_PAGES = 10
+
 const findPullRequest = async (
   gitea: GiteaClient,
   head: string,
   base: string,
 ): Promise<{ number?: number | undefined; title?: string | undefined } | undefined> => {
-  try {
-    const data = getData(await gitea.GET('/repos/{owner}/{repo}/pulls/{base}/{head}', {
+  const searchPage = async (
+    page: number,
+  ): Promise<{ number?: number | undefined; title?: string | undefined } | undefined> => {
+    const data = getData(await gitea.GET('/repos/{owner}/{repo}/pulls', {
       params: {
         path: {
           owner: context.repo.owner,
           repo: context.repo.repo,
-          base,
-          head,
+        },
+        query: {
+          base_branch: base,
+          state: 'open',
+          sort: 'recentupdate',
+          page,
+          limit: PR_SEARCH_PAGE_SIZE,
         },
       },
     }))
-    return data
-  } catch (error) {
-    if (isNotFound(error)) {
+    const match = data.find((pullRequest) => pullRequest.head?.ref === head && pullRequest.base?.ref === base)
+    if (match !== undefined) {
+      return {
+        number: match.number,
+        title: match.title,
+      }
+    }
+    if (data.length < PR_SEARCH_PAGE_SIZE || page >= PR_SEARCH_MAX_PAGES) {
       return undefined
     }
-    throw error
+    return searchPage(page + 1)
   }
+  return searchPage(1)
 }
 
 const getPullRequestNumber = (pullRequest: { number?: number | undefined }): number => {
