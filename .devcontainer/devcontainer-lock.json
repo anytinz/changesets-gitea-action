@@ -13,6 +13,11 @@
       "resolved": "ghcr.io/devcontainers/features/common-utils@sha256:cb0c4d3c276f157eed17935747e364178d75fee17f55c4e129966f64633deb3a",
       "integrity": "sha256:cb0c4d3c276f157eed17935747e364178d75fee17f55c4e129966f64633deb3a"
     },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "1.1.1",
+      "resolved": "ghcr.io/devcontainers/features/github-cli@sha256:94879eebb6a0e4e2f197de9f12db7427cb4a25b82d93c55239ce8c8fc394a1b4",
+      "integrity": "sha256:94879eebb6a0e4e2f197de9f12db7427cb4a25b82d93c55239ce8c8fc394a1b4"
+    },
     "ghcr.io/joshuanianji/devcontainer-features/mount-pnpm-store:1": {
       "version": "1.1.0",
       "resolved": "ghcr.io/joshuanianji/devcontainer-features/mount-pnpm-store@sha256:dbd5cfae709d15bfb2c2b094c8a3f834e1674deea8f8adbdd089527fdaea8a60",
