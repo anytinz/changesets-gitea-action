@@ -55,8 +55,10 @@ jobs:
         run: pnpm build
       - name: Check dist is up to date
         run: |
-          if ! git diff --exit-code -- dist; then
+          if ! git diff --quiet -- dist; then
             echo "::error::dist is out of date. Run 'pnpm build' and commit the changes."
+            echo "Changed files:"
+            git diff --name-only -- dist
             exit 1
           fi
       - name: Upload dist
