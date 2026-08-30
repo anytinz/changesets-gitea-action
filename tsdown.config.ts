@@ -11,6 +11,9 @@ const config = defineConfig({
     'pr-comment': './src/pr-comment/index.ts',
   },
   format: ['esm'],
+  deps: {
+    alwaysBundle: /.*/u,
+  },
   outExtensions: () => ({ js: '.js' }),
   clean: true,
   sourcemap: 'inline',
