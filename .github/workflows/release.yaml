@@ -29,7 +29,22 @@ jobs:
           cache: true
 
       - name: Version or publish via changesets
+        id: changesets
         uses: changesets/action@v2
         with:
           version-script: pnpm changeset version
           publish-script: pnpm changeset publish
+
+      - name: Push major version tag
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          major=$(jq -r '.version | split(".")[0]' package.json)
+          major_ref="refs/tags/v$major"
+          sha=$(git rev-parse HEAD)
+          if gh api "repos/${{ github.repository }}/git/refs/$major_ref" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${{ github.repository }}/git/refs/$major_ref?force=true" -f sha="$sha"
+          else
+            gh api --method POST "repos/${{ github.repository }}/git/refs" -f ref="$major_ref" -f sha="$sha"
+          fi
