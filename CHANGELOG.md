@@ -1,5 +1,15 @@
 # changesets-gitea-action
 
+## 0.2.0
+
+### Minor Changes
+
+- [#10](https://github.com/anytinz/changesets-gitea-action/pull/10) [`d62eb39`](https://github.com/anytinz/changesets-gitea-action/commit/d62eb396fd200668fa6cf9470d513bf26a79ce4a) Thanks [@anytinz](https://github.com/anytinz)! - build: remove unused tsconfig options and update tsdown config for better output management
+
+### Patch Changes
+
+- [#10](https://github.com/anytinz/changesets-gitea-action/pull/10) [`d62eb39`](https://github.com/anytinz/changesets-gitea-action/commit/d62eb396fd200668fa6cf9470d513bf26a79ce4a) Thanks [@anytinz](https://github.com/anytinz)! - fix: remove `dist` in `.gitignore` to include artifacts
+
 ## 0.1.1
 
 ### Patch Changes
