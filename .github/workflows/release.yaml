@@ -41,10 +41,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           major=$(jq -r '.version | split(".")[0]' package.json)
-          major_ref="refs/tags/v$major"
           sha=$(git rev-parse HEAD)
-          if gh api "repos/${{ github.repository }}/git/refs/$major_ref" >/dev/null 2>&1; then
-            gh api --method PATCH "repos/${{ github.repository }}/git/refs/$major_ref?force=true" -f sha="$sha"
+          if gh api "repos/${{ github.repository }}/git/ref/tags/v$major" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${{ github.repository }}/git/refs/tags/v$major" -f sha="$sha" -f force=true
           else
-            gh api --method POST "repos/${{ github.repository }}/git/refs" -f ref="$major_ref" -f sha="$sha"
+            gh api --method POST "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/v$major" -f sha="$sha"
           fi
