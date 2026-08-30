@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { lstat, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { info, warning } from '@actions/core'
 import { exec, getExecOutput } from '@actions/exec'
@@ -169,7 +169,16 @@ export class Git {
         return
       }
 
-      const fileContents = await readFile(path.join(this.cwd, filepath))
+      const filePath = path.join(this.cwd, filepath)
+      const stats = await lstat(filePath)
+      if (!stats.isFile()) {
+        // Skip non-regular files (e.g. directory symlinks created by pnpm or
+        // bun installs), they cannot be represented in the contents API.
+        warning(`Skipping non-regular file: ${filepath}`)
+        return
+      }
+
+      const fileContents = await readFile(filePath)
       const content = fileContents.toString('base64')
       const sha = await this.getFileSha({ owner, repo, branch, apiPath })
 
