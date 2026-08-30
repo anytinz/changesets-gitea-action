@@ -1,5 +1,11 @@
 # changesets-gitea-action
 
+## 0.2.1
+
+### Patch Changes
+
+- [#13](https://github.com/anytinz/changesets-gitea-action/pull/13) [`9de4c6f`](https://github.com/anytinz/changesets-gitea-action/commit/9de4c6fbc9d6a675b59e7ce890558761f88faca7) Thanks [@anytinz](https://github.com/anytinz)! - fix: update dist
+
 ## 0.2.0
 
 ### Minor Changes
