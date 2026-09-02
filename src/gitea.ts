@@ -16,8 +16,15 @@ export const getGiteaServerUrl = (): string => {
       'Please set the GITHUB_SERVER_URL environment variable, e.g. https://gitea.example.com',
     )
   }
-  return serverUrl
+  return serverUrl.replace(/\/+$/u, '')
 }
+
+/**
+ * The base URL of the Gitea REST API. The generated client path templates
+ * (e.g. `/repos/{owner}/{repo}/pulls`) are relative to the API root, so the
+ * `/api/v1` prefix must be added to the instance URL.
+ */
+export const getGiteaApiUrl = (): string => `${getGiteaServerUrl()}/api/v1`
 
 export const isNotFound = (error: unknown): boolean => typeof error === 'object'
   && error !== null
@@ -38,13 +45,61 @@ export const getData = <T extends { data?: unknown }>(result: T): NonNullable<T[
   return data as unknown as NonNullable<T['data']>
 }
 
+const MAX_ERROR_BODY_CHARS = 1_000
+
+/**
+ * Formats a response body for inclusion in an error message. JSON error
+ * bodies produced by the Gitea API expose their `message` field; anything
+ * else (e.g. HTML error pages from a reverse proxy) is truncated.
+ */
+const getErrorMessage = (errorBody: string | undefined): string | undefined => {
+  if (errorBody === undefined) {
+    return undefined
+  }
+  try {
+    const parsed = JSON.parse(errorBody) as unknown
+    if (typeof parsed === 'object' && parsed !== null && 'message' in parsed) {
+      const message = (parsed as { message: unknown }).message
+      if (typeof message === 'string' && message !== '') {
+        return message
+      }
+    }
+  } catch {
+    // fall through to the raw body
+  }
+  const trimmed = errorBody.trim()
+  if (trimmed === '') {
+    return undefined
+  }
+  return trimmed.length <= MAX_ERROR_BODY_CHARS
+    ? trimmed
+    : `${trimmed.slice(0, MAX_ERROR_BODY_CHARS)}…`
+}
+
 class GiteaRequestError extends Error {
   public readonly status: number
 
-  public constructor(status: number, message: string) {
+  public readonly method: string
+
+  public readonly url: string
+
+  public readonly responseBody: string | undefined
+
+  public constructor(input: Request, response: Response, responseBody: string | undefined) {
+    const detail = getErrorMessage(responseBody)
+    const message = [
+      `Gitea API request failed: ${input.method} ${input.url} -> ${response.status}`,
+      response.statusText,
+      detail,
+    ]
+      .filter((part): part is string => part !== undefined && part !== '')
+      .join(' ')
     super(message)
     this.name = 'GiteaRequestError'
-    this.status = status
+    this.status = response.status
+    this.method = input.method
+    this.url = input.url
+    this.responseBody = responseBody
   }
 }
 
@@ -55,21 +110,6 @@ const sleep = async (ms: number): Promise<void> => new Promise((resolve) => {
 const RATE_LIMIT_RETRIES = 2
 
 const isRateLimitResponse = (response: Response): boolean => response.status === 429
-
-const getErrorMessage = (errorBody: string): string | undefined => {
-  try {
-    const parsed = JSON.parse(errorBody) as unknown
-    if (typeof parsed === 'object' && parsed !== null && 'message' in parsed) {
-      const message = (parsed as { message: unknown }).message
-      if (typeof message === 'string' && message !== '') {
-        return message
-      }
-    }
-  } catch {
-    // ignore unparseable error bodies
-  }
-  return undefined
-}
 
 /**
  * The generated client never throws on non-2xx responses, it returns
@@ -100,19 +140,12 @@ const fetchWithRateLimitRetry = async (input: Request): Promise<Response> => {
     return response
   }
 
-  const status = response.status
   const errorBody = await response.text().catch(() => undefined)
-  const message = errorBody === undefined
-    ? undefined
-    : getErrorMessage(errorBody)
-  throw new GiteaRequestError(
-    status,
-    message ?? `Gitea API request failed with status ${status}`,
-  )
+  throw new GiteaRequestError(input, response, errorBody)
 }
 
 export const setupGitea = (giteaToken: string): Client<paths> => createClient<paths>({
-  baseUrl: getGiteaServerUrl(),
+  baseUrl: getGiteaApiUrl(),
   headers: {
     Authorization: `token ${giteaToken}`,
   },

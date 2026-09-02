@@ -19,7 +19,12 @@ vi.mock('@actions/github', () => ({
   },
 }))
 
-type PullRequestData = { number: number; title?: string }
+type PullRequestData = {
+  number?: number
+  title?: string
+  head?: { ref?: string }
+  base?: { ref?: string }
+}
 type CreatePullRequestBody = {
   base: string
   body: string
@@ -52,7 +57,7 @@ type EditPullRequestInit = {
 }
 
 const mockedGiteaMethods = vi.hoisted(() => ({
-  GET: vi.fn<(url: string, init: Record<string, unknown>) => Promise<{ data: PullRequestData }>>(),
+  GET: vi.fn<(url: string, init: Record<string, unknown>) => Promise<{ data: PullRequestData[] }>>(),
   POST: vi.fn<(url: string, init: CreatePullRequestInit) => Promise<{ data: PullRequestData }>>(),
   PATCH: vi.fn<(url: string, init: EditPullRequestInit) => Promise<{ data: PullRequestData }>>(),
   PUT: vi.fn(),
@@ -131,9 +136,9 @@ const writeChangesets = async (
 ): Promise<unknown[]> => Promise.all(changesets.map(async (changeset) => writeChangeset(changeset, cwd)))
 
 const mockNoExistingPullRequest = (): void => {
-  mockedGiteaMethods.GET.mockRejectedValueOnce(
-    Object.assign(new Error('not found'), { status: 404 }),
-  )
+  mockedGiteaMethods.GET.mockResolvedValueOnce({
+    data: [],
+  })
 }
 
 const mockCreatePullRequest = (): void => {
@@ -400,7 +405,13 @@ describe('version', () => {
       ).path
 
       mockedGiteaMethods.GET.mockResolvedValueOnce({
-        data: { number: 123 },
+        data: [
+          {
+            number: 123,
+            head: { ref: 'changeset-release/some-branch' },
+            base: { ref: 'some-branch' },
+          },
+        ],
       })
 
       await writeChangesets(
@@ -472,7 +483,14 @@ describe('version', () => {
       ).path
 
       mockedGiteaMethods.GET.mockResolvedValueOnce({
-        data: { number: 123, title: 'WIP: Version Packages' },
+        data: [
+          {
+            number: 123,
+            title: 'WIP: Version Packages',
+            head: { ref: 'changeset-release/some-branch' },
+            base: { ref: 'some-branch' },
+          },
+        ],
       })
 
       await writeChangesets(
@@ -509,7 +527,13 @@ describe('version', () => {
       ).path
 
       mockedGiteaMethods.GET.mockResolvedValueOnce({
-        data: { number: 123 },
+        data: [
+          {
+            number: 123,
+            head: { ref: 'changeset-release/some-branch' },
+            base: { ref: 'some-branch' },
+          },
+        ],
       })
 
       await writeChangesets(
