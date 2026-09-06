@@ -1,5 +1,11 @@
 # changesets-gitea-action
 
+## 0.2.4
+
+### Patch Changes
+
+- [#24](https://github.com/anytinz/changesets-gitea-action/pull/24) [`2fb1aec`](https://github.com/anytinz/changesets-gitea-action/commit/2fb1aecf700fcc207974b146160e2f5c054b376c) Thanks [@anytinz](https://github.com/anytinz)! - Create or update version pull request branches with one atomic commit based on the target branch, replacing the previous release commit on repeated runs instead of appending per-file and empty commits.
+
 ## 0.2.3
 
 ### Patch Changes
