@@ -3,7 +3,8 @@ import path from 'node:path'
 import { info, warning } from '@actions/core'
 import { exec, getExecOutput } from '@actions/exec'
 import { context } from '@actions/github'
-import { getData, getGiteaServerUrl, isNotFound } from '@/gitea'
+import { getGiteaServerUrl } from '@/gitea'
+import type { components } from '@/generated/gitea-schema'
 import type { GiteaClient } from '@/gitea'
 
 const getErrorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err))
@@ -91,19 +92,31 @@ export class Git {
       })
   }
 
-  public async pushChanges({ branch, message }: { branch: string; message: string }): Promise<void> {
-    await this.pushChangesViaApi({ branch, message })
+  public async pushChanges({
+    base,
+    branch,
+    message,
+  }: {
+    base: string
+    branch: string
+    message: string
+  }): Promise<void> {
+    await this.pushChangesViaApi({ base, branch, message })
   }
 
   /**
    * Push the working directory changes to a branch via the Gitea contents API.
    *
-   * This emulates the behavior of `git add .` + `git commit` + `git push`.
+   * Gitea's multi-file endpoint creates a single commit from `base` and force
+   * updates `branch`. Re-running the action therefore replaces the previous
+   * release commit instead of appending one commit per changed file.
    */
   private async pushChangesViaApi({
+    base,
     branch,
     message,
   }: {
+    base: string
     branch: string
     message: string
   }): Promise<void> {
@@ -113,9 +126,7 @@ export class Git {
     })
     const repoRoot = repoRootOutput.trim()
 
-    await this.ensureBranch({ owner, repo, branch })
-
-    const changes = new Map<string, 'create' | 'update' | 'delete'>()
+    const changes = new Map<string, 'upload' | 'delete'>()
 
     const { stdout: diffOutput } = await getExecOutput(
       'git',
@@ -127,13 +138,7 @@ export class Git {
       if (filepath === undefined) {
         return
       }
-      let type: 'create' | 'update' | 'delete' = 'update'
-      if (status === 'D') {
-        type = 'delete'
-      } else if (status === 'A') {
-        type = 'create'
-      }
-      changes.set(filepath, type)
+      changes.set(filepath, status === 'D' ? 'delete' : 'upload')
     })
 
     const { stdout: untrackedOutput } = await getExecOutput(
@@ -143,125 +148,56 @@ export class Git {
     )
     untrackedOutput.split('\n').forEach((filepath) => {
       if (filepath !== '') {
-        changes.set(filepath, 'create')
+        changes.set(filepath, 'upload')
       }
     })
 
-    await [...changes].reduce<Promise<void>>(async (previous, [filepath, type]) => {
-      await previous
-      // File paths relative to the git repository root, as expected by the API
-      const apiPath = path.relative(repoRoot, path.resolve(this.cwd, filepath)).split(path.sep).join('/')
+    const pendingFiles = await Promise.all(
+      [...changes].map(async ([filepath, operation]) => {
+        // File paths relative to the git repository root, as expected by the API
+        const apiPath = path.relative(repoRoot, path.resolve(this.cwd, filepath)).split(path.sep).join('/')
 
-      if (type === 'delete') {
-        const sha = await this.getFileSha({ owner, repo, branch, apiPath })
-        if (sha !== undefined) {
-          await this.gitea.DELETE('/repos/{owner}/{repo}/contents/{filepath}', {
-            params: {
-              path: {
-                owner,
-                repo,
-                filepath: apiPath,
-              },
-            },
-            body: { branch, sha, message },
-          })
+        if (operation === 'delete') {
+          return {
+            operation: 'delete',
+            path: apiPath,
+          } satisfies components['schemas']['ChangeFileOperation']
         }
-        return
-      }
 
-      const filePath = path.join(this.cwd, filepath)
-      const stats = await lstat(filePath)
-      if (!stats.isFile()) {
-        // Skip non-regular files (e.g. directory symlinks created by pnpm or
-        // bun installs), they cannot be represented in the contents API.
-        warning(`Skipping non-regular file: ${filepath}`)
-        return
-      }
+        const filePath = path.join(this.cwd, filepath)
+        const stats = await lstat(filePath)
+        if (!stats.isFile()) {
+          // Skip non-regular files (e.g. directory symlinks created by pnpm or
+          // bun installs), they cannot be represented in the contents API.
+          warning(`Skipping non-regular file: ${filepath}`)
+          return
+        }
 
-      const fileContents = await readFile(filePath)
-      const content = fileContents.toString('base64')
-      const sha = await this.getFileSha({ owner, repo, branch, apiPath })
+        const fileContents = await readFile(filePath)
+        return {
+          operation: 'upload',
+          path: apiPath,
+          content: fileContents.toString('base64'),
+        } satisfies components['schemas']['ChangeFileOperation']
+      }),
+    )
+    const files = pendingFiles.filter((operation) => operation !== undefined)
 
-      await (sha === undefined
-        ? this.gitea.POST('/repos/{owner}/{repo}/contents/{filepath}', {
-          params: {
-            path: {
-              owner,
-              repo,
-              filepath: apiPath,
-            },
-          },
-          body: { branch, content, message },
-        })
-        : this.gitea.PUT('/repos/{owner}/{repo}/contents/{filepath}', {
-          params: {
-            path: {
-              owner,
-              repo,
-              filepath: apiPath,
-            },
-          },
-          body: { branch, sha, content, message },
-        }))
-    }, Promise.resolve())
-  }
-
-  private async ensureBranch({
-    owner,
-    repo,
-    branch,
-  }: {
-    owner: string
-    repo: string
-    branch: string
-  }): Promise<void> {
-    try {
-      await this.gitea.GET('/repos/{owner}/{repo}/branches/{branch}', {
-        params: {
-          path: { owner, repo, branch },
-        },
-      })
-    } catch (error) {
-      if (isNotFound(error)) {
-        await this.gitea.POST('/repos/{owner}/{repo}/branches', {
-          params: {
-            path: { owner, repo },
-          },
-          body: {
-            new_branch_name: branch,
-            old_ref_name: context.sha,
-          },
-        })
-        return
-      }
-      throw error
+    if (files.length === 0) {
+      throw new Error('The version command did not produce any regular file changes to commit')
     }
-  }
 
-  private async getFileSha({
-    owner,
-    repo,
-    branch,
-    apiPath,
-  }: {
-    owner: string
-    repo: string
-    branch: string
-    apiPath: string
-  }): Promise<string | undefined> {
-    try {
-      const data = getData(await this.gitea.GET('/repos/{owner}/{repo}/contents/{filepath}', {
-        params: {
-          path: { owner, repo, filepath: apiPath },
-          query: { ref: branch },
-        },
-      }))
-      return Array.isArray(data) ? undefined : data.sha
-    } catch (error) {
-      if (isNotFound(error)) {
-        return undefined
-      }
-      throw error
-    }
+    await this.gitea.POST('/repos/{owner}/{repo}/contents', {
+      params: {
+        path: { owner, repo },
+      },
+      body: {
+        branch: base,
+        new_branch: branch,
+        force_push: true,
+        message,
+        files,
+      },
+    })
   }
 }

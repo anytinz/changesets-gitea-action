@@ -435,6 +435,7 @@ export const runVersion = async ({
   info(`Existing pull request: ${JSON.stringify(existingPullRequest, null, 2)}`)
 
   await git.pushChanges({
+    base: branch,
     branch: versionBranch,
     message: finalCommitMessage,
   })
